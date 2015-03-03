@@ -64,8 +64,12 @@ FAT_PARTITION = 1
 ROOTFS_PARTITION = 2
 RAW_PARTITION = 3
 
-# We look for Preloader, FAT, and ROOTFS files in a set of directories under a commong
-# ImageFiles directory (args.images_loc). Each partition type has a directory.
+# We look for Preloader, FAT, and ROOTFS files in a set of directories under a common
+# directory (args.images_loc). Each partition type has a directory.
+# The path to each partition's files is then:
+#     os.path.join(args.images_loc,IMAGE_FILES_RAW_LOC)
+#     os.path.join(args.images_loc,IMAGE_FILES_FAT_LOC)
+#     os.path.join(args.images_loc,IMAGE_FILES_ROOTFS_LOC)
 IMAGE_FILES_RAW_LOC = "raw_partition"
 IMAGE_FILES_FAT_LOC = "fat_partition"
 IMAGE_FILES_ROOTFS_LOC = "rootfs_partition"
@@ -81,6 +85,8 @@ else:
         libc.sync()
 
 class SystemDevicesInterface(object):
+    
+    LastCommandResult = 0
 
     def __init__(self, logFile, echo_cmds = False):
         self.EchoCmds = echo_cmds
@@ -117,6 +123,28 @@ class SystemDevicesInterface(object):
             else:
                 print(Style.DIM + Text + "  Not an SDCard" + Style.RESET_ALL)
 
+    def run_cmd(self, cmd, workingDir = "", inputStr = None, suppress_errors={}):
+        """
+        Runs the speicifed command and reports any errors.
+        Returns True if command had no errors otherwise False.
+        LastCommandResult holds the command result code.
+        """
+        r = self._shell_helper.RunCmdCaptureOutput(cmd, workingDir, inputStr, echo_cmd = self.EchoCmds)
+        if self.EchoCmds:
+            if r[1]:
+                for line in r[1]:
+                    print("  " + line)
+        self.LastCommandResult = r[0]
+        # Check for errors (non-zero return code)
+        if self.LastCommandResult != 0 and (not self.LastCommandResult in suppress_errors):
+            if r[2]:
+                for line in r[2]:
+                    print(Fore.RED + "  " + line + Fore.RESET)
+            cmdName = cmd.split()[0]
+            print(Fore.RED + "ERROR: "+cmdName+" failed with code {}.".format(r[0]) + Fore.RESET)
+            return(False)
+        return(True)
+
     def unmount_device(self, targetDevice):
         """
         Unmounts any mounted partitions on the target device
@@ -132,12 +160,8 @@ class SystemDevicesInterface(object):
 
         for mount in Mounts:
             print("Unmounting '" + mount + "'")
-            r = self._shell_helper.RunCmdCaptureOutput('umount ' + mount, echo_cmd = self.EchoCmds)
-            if r[0] != 0:
-                if r[2]:
-                    for line in r[2]:
-                        print(Fore.RED + "  " + line + Fore.RESET)
-                print(Fore.RED + "ERROR: umount failed with code {}.".format(r[0]) + Fore.RESET)
+            cmd = 'umount ' + mount
+            if not self.run_cmd(cmd):
                 return(False)
         return(True)
 
@@ -165,12 +189,7 @@ class SystemDevicesInterface(object):
             print(Fore.RED + "ERROR: " + targetDevice.path + " is not a valid SDCard device. Aborting." + Fore.RESET)
             return(False)
         cmd = "dd if=/dev/zero of=" + targetDevice.path + " bs=1024 count=1025"
-        r = self._shell_helper.RunCmdCaptureOutput(cmd, echo_cmd = self.EchoCmds)
-        if r[0] != 0:
-            if r[2]:
-                for line in r[2]:
-                    print(Fore.RED + "  " + line + Fore.RESET)
-            print(Fore.RED + "ERROR: dd failed with code {}.".format(r[0]) + Fore.RESET)
+        if not self.run_cmd(cmd):
             return(False)
         return(True)
 
@@ -182,12 +201,7 @@ class SystemDevicesInterface(object):
             print(Fore.RED + "ERROR: " + targetDevice.path + " is not a valid SDCard device. Aborting." + Fore.RESET)
             return(False)
         cmd = "dd if="+file_path+" of=" + nodePath + " bs=512"
-        r = self._shell_helper.RunCmdCaptureOutput(cmd, echo_cmd = self.EchoCmds)
-        if r[0] != 0:
-            if r[2]:
-                for line in r[2]:
-                    print(Fore.RED + "  " + line + Fore.RESET)
-            print(Fore.RED + "ERROR: dd failed with code {}.".format(r[0]) + Fore.RESET)
+        if not run_cmd(cmd):
             return(False)
         return(True)
 
@@ -206,16 +220,7 @@ class SystemDevicesInterface(object):
             SFDiskArgs = SFDiskArgs + "\n"
         Cylinders = int(targetDevice.size.to("B") / CYLINDER_SIZE_BYTES)
         Cmd = "sfdisk -f -D -H " + str(HEADS) + " -S "+ str(SECTORS)+" -C " + str(Cylinders) + " -uB " + targetDevice.path
-        r = self._shell_helper.RunCmdCaptureOutput(Cmd, inputStr = SFDiskArgs, echo_cmd = self.EchoCmds)
-        if self.EchoCmds:
-            if r[1]:
-                for line in r[1]:
-                    print("  " + line)
-        if r[0] != 0:
-            if r[2]:
-                for line in r[2]:
-                    print(Fore.RED + "  " + line + Fore.RESET)
-            print(Fore.RED + "ERROR: sfdisk failed with code {}.".format(r[0]) + Fore.RESET)
+        if not self.run_cmd(Cmd, inputStr = SFDiskArgs):
             return(False)
         return(True)
 
@@ -231,40 +236,41 @@ class SystemDevicesInterface(object):
         print("Formatting " + NodePath + ' as BOOT:FAT32')
         # First zero out the first sector per http://linux.die.net/man/8/fdisk
         Cmd = 'dd if=/dev/zero of='+NodePath+' bs=512 count=1'
-        r = self._shell_helper.RunCmdCaptureOutput(Cmd, echo_cmd = self.EchoCmds)
-        if r[0] != 0:
-            if r[2]:
-                for line in r[2]:
-                    print(Fore.RED + "  " + line + Fore.RESET)
-            print(Fore.RED + "ERROR: mkfs.vfat failed with code {}.".format(r[0]) + Fore.RESET)
+        if not self.run_cmd(Cmd):
             return(False)
         # The format
         Cmd = 'mkfs.vfat -F 32 -n "BOOT" ' + NodePath
-        r = self._shell_helper.RunCmdCaptureOutput(Cmd, echo_cmd = self.EchoCmds)
-        if r[0] != 0:
-            if r[2]:
-                for line in r[2]:
-                    print(Fore.RED + "  " + line + Fore.RESET)
-            print(Fore.RED + "ERROR: mkfs.vfat failed with code {}.".format(r[0]) + Fore.RESET)
+        if not self.run_cmd(Cmd):
             return(False)
         return(True)
 
     def format_rootfs_partition(self, targetDevice):
         """
-        Formats the rootfs partition as an EXT3 file system
+        Formats the rootfs partition as an EXT4 file system
         """
         if not self.validate_device(targetDevice):
             print(Fore.RED + "ERROR: " + targetDevice.path + " is not a valid SDCard device. Aborting." + Fore.RESET)
             return(False)
         NodePath = targetDevice.path + str(ROOTFS_PARTITION)
-        print("Formatting " + NodePath + ' as ROOTFS:EXT3')
-        Cmd = 'mkfs.ext3 -j -L "ROOTFS" ' + NodePath
-        r = self._shell_helper.RunCmdCaptureOutput(Cmd, echo_cmd = self.EchoCmds)
-        if r[0] != 0:
-            if r[2]:
-                for line in r[2]:
-                    print(Fore.RED + "  " + line + Fore.RESET)
-            print(Fore.RED + "ERROR: mkfs.ext3 failed with code {}.".format(r[0]) + Fore.RESET)
+        print("Formatting " + NodePath + ' as ROOTFS:EXT4')
+        # These values are suppose to work well for SDCARDS.
+        # See http://docs.pikatech.com/display/DEV/Optimizing+File+System+Parameters+of+SD+card+for+use+on+WARP+V3
+        # See https://developer.ridgerun.com/wiki/index.php/High_performance_SD_card_tuning_using_the_EXT4_file_system
+        Cmd = 'mkfs.ext4 -O ^has_journal -E stride=2,stripe-width=256 -b 4096 -L "ROOTFS" '+ NodePath
+        if not self.run_cmd(Cmd):
+            return(False)
+        Cmd = 'tune2fs -o journal_data_writeback '+ NodePath
+        if not self.run_cmd(Cmd):
+            return(False)
+        Cmd = 'tune2fs -O ^has_journal '+ NodePath
+        if not self.run_cmd(Cmd):
+            return(False)
+        Cmd = 'tune2fs -O ^huge_file '+ NodePath
+        if not self.run_cmd(Cmd):
+            return(False)
+        Cmd = 'e2fsck -fpv '+ NodePath
+        # Return value 1 just means the command 'fixed' any issues. 
+        if not self.run_cmd(Cmd, suppress_errors={1}):
             return(False)
         return(True)
 
@@ -279,12 +285,7 @@ class SystemDevicesInterface(object):
         print("Mounting " + NodePath)
         user = os.getenv("SUDO_USER")
         Cmd = 'sudo -u '+user+' udisks --mount ' + NodePath
-        r = self._shell_helper.RunCmdCaptureOutput(Cmd, echo_cmd = self.EchoCmds)
-        if r[0] != 0:
-            if r[2]:
-                for line in r[2]:
-                    print(Fore.RED + "  " + line + Fore.RESET)
-            print(Fore.RED + "ERROR: udisks failed with code {}.".format(r[0]) + Fore.RESET)
+        if not self.run_cmd(Cmd):
             return(False)
         return(True)
 
@@ -298,12 +299,7 @@ class SystemDevicesInterface(object):
         NodePath = targetDevice.path + str(ROOTFS_PARTITION)
         print("Mounting " + NodePath)
         Cmd = 'udisks --mount ' + NodePath
-        r = self._shell_helper.RunCmdCaptureOutput(Cmd, echo_cmd = self.EchoCmds)
-        if r[0] != 0:
-            if r[2]:
-                for line in r[2]:
-                    print(Fore.RED + "  " + line + Fore.RESET)
-            print(Fore.RED + "ERROR: udisks failed with code {}.".format(r[0]) + Fore.RESET)
+        if not self.run_cmd(Cmd):
             return(False)
         return(True)
 
@@ -313,12 +309,7 @@ class SystemDevicesInterface(object):
         """
         cmd = "tar --numeric-owner --one-file-system -cpzf --exclude=./proc --exclude=./lost+found"
         cmd = cmd + " --exclude=./sys --exclude=./mnt --exclude=./media --exclude=./dev '"+dst_file_path+"' ."
-        r = self._shell_helper.RunCmdCaptureOutput(cmd, workingDir=nodePath, echo_cmd = self.EchoCmds)
-        if r[0] != 0:
-            if r[2]:
-                for line in r[2]:
-                    print(Fore.RED + "  " + line + Fore.RESET)
-            print(Fore.RED + "ERROR: tar failed with code {}.".format(r[0]) + Fore.RESET)
+        if not self.run_cmd(cmd, workingDir=nodePath):
             return(False)
         user = os.getenv("SUDO_USER")
         return(self.change_file_owner(dst_file_path, user))
@@ -330,35 +321,20 @@ class SystemDevicesInterface(object):
         script = os.path.basename(src_script_path)
         script_loc = os.path.dirname(src_script_path)
         cmd = "sh '"+script+"' "+nodePath
-        r = self._shell_helper.RunCmdCaptureOutput(cmd, workingDir=script_loc, echo_cmd = self.EchoCmds)
-        if r[0] != 0:
-            if r[2]:
-                for line in r[2]:
-                    print(Fore.RED + "  " + line + Fore.RESET)
-            print(Fore.RED + "ERROR: script failed with code {}.".format(r[0]) + Fore.RESET)
+        if not self.run_cmd(cmd, workingDir=script_loc):
             return(False)
         sync()
         return(True)
 
     def change_file_owner(self, file_path, new_owner):
         cmd = "chown "+new_owner+":"+new_owner+" "+file_path
-        r = self._shell_helper.RunCmdCaptureOutput(cmd, echo_cmd = self.EchoCmds)
-        if r[0] != 0:
-            if r[2]:
-                for line in r[2]:
-                    print(Fore.RED + "  " + line + Fore.RESET)
-            print(Fore.RED + "ERROR: chown failed with code {}.".format(r[0]) + Fore.RESET)
+        if not self.run_cmd(cmd):
             return(False)
         return(True)
 
     def change_file_permissions(self, file_path, permissions):
         cmd = "chmod "+permissions+" "+file_path
-        r = self._shell_helper.RunCmdCaptureOutput(cmd, echo_cmd = self.EchoCmds)
-        if r[0] != 0:
-            if r[2]:
-                for line in r[2]:
-                    print(Fore.RED + "  " + line + Fore.RESET)
-            print(Fore.RED + "ERROR: chmod failed with code {}.".format(r[0]) + Fore.RESET)
+        if not self.run_cmd(cmd):
             return(False)
         return(True)
 
