@@ -26,7 +26,7 @@
 # Script to create Boot SD card for the Altera SOC FPGAs
 #
 # Requires the following Python modules:
-#   shell_helper
+#   shell_helper (https://github.com/byates/shell_helper)
 #   reparted
 #   colorama
 #-------------------------------------------------------------------------------
