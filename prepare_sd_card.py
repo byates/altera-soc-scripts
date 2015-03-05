@@ -201,7 +201,7 @@ class SystemDevicesInterface(object):
             print(Fore.RED + "ERROR: " + targetDevice.path + " is not a valid SDCard device. Aborting." + Fore.RESET)
             return(False)
         cmd = "dd if="+file_path+" of=" + nodePath + " bs=512"
-        if not run_cmd(cmd):
+        if not self.run_cmd(cmd):
             return(False)
         return(True)
 
@@ -492,7 +492,9 @@ def InstallSPL(sysDevicesIF, selectedDevice, args):
                 exit(-1)
             return
         except:
-            pass
+            e = sys.exc_info()[0]
+            print(e)
+            return
         print(Fore.RED + "ERROR: Invalid choice." + Fore.RESET)
         exit(-1)
 
