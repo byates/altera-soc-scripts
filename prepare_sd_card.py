@@ -256,15 +256,22 @@ class SystemDevicesInterface(object):
         # These values are suppose to work well for SDCARDS.
         # See http://docs.pikatech.com/display/DEV/Optimizing+File+System+Parameters+of+SD+card+for+use+on+WARP+V3
         # See https://developer.ridgerun.com/wiki/index.php/High_performance_SD_card_tuning_using_the_EXT4_file_system
-        Cmd = 'mkfs.ext4 -O ^has_journal -E stride=2,stripe-width=256 -b 4096 -L "ROOTFS" '+ NodePath
-        if not self.run_cmd(Cmd):
-            return(False)
-        Cmd = 'tune2fs -o journal_data_writeback '+ NodePath
-        if not self.run_cmd(Cmd):
-            return(False)
-        Cmd = 'tune2fs -O ^has_journal '+ NodePath
-        if not self.run_cmd(Cmd):
-            return(False)
+        print("Enter YES for journal support on EXT4 partition or NO (default) for data_writeback:")
+        UserInput = raw_input("Type " + Fore.RED + "yes" + Fore.RESET + " or anything else for default: ")
+        if UserInput == "yes":
+            Cmd = 'mkfs.ext4 -E stride=2,stripe-width=256 -b 4096 -L "ROOTFS" '+ NodePath
+            if not self.run_cmd(Cmd):
+                return(False)
+        else:
+            Cmd = 'mkfs.ext4 -O ^has_journal -E stride=2,stripe-width=256 -b 4096 -L "ROOTFS" '+ NodePath
+            if not self.run_cmd(Cmd):
+                return(False)
+            Cmd = 'tune2fs -o journal_data_writeback '+ NodePath
+            if not self.run_cmd(Cmd):
+                return(False)
+            Cmd = 'tune2fs -O ^has_journal '+ NodePath
+            if not self.run_cmd(Cmd):
+                return(False)
         Cmd = 'tune2fs -O ^huge_file '+ NodePath
         if not self.run_cmd(Cmd):
             return(False)
@@ -499,6 +506,12 @@ def InstallSPL(sysDevicesIF, selectedDevice, args):
         exit(-1)
 
 def FormatFAT(sysDevicesIF, selectedDevice, args):
+    if not args.force:
+        print("Are you sure you want to format the FAT partition?")
+        UserInput = raw_input("Type " + Fore.GREEN + "yes" + Fore.RESET + " or anything else to abort: ")
+        if UserInput != "yes":
+            print(Fore.RED + "User abort." + Fore.RESET)
+            return
     print("Dis-mounting all mounts on " + selectedDevice.path + "...")
     if not sysDevicesIF.unmount_device(selectedDevice):
         exit(-1)
@@ -634,6 +647,12 @@ tar -C $1 -xzpf """
 
 
 def DeleteAllOnRootFs(sysDevicesIF, selectedDevice, args):
+    if not args.force:
+        print("Are you sure you want to format the ROOTFS partition?")
+        UserInput = raw_input("Type " + Fore.GREEN + "yes" + Fore.RESET + " or anything else to abort: ")
+        if UserInput != "yes":
+            print(Fore.RED + "User abort." + Fore.RESET)
+            return
     print("Dis-mounting all mounts on " + selectedDevice.path + "...")
     if not sysDevicesIF.unmount_device(selectedDevice):
         exit(-1)
