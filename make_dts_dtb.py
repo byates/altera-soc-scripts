@@ -121,7 +121,7 @@ if __name__ == '__main__':
     if not os.path.isfile(compiler):
         print("Compiler specified '" + compiler + "' is not valid.")
         exit(-1)
-    
+
     # If the user has specified a source file and check to make sure it is a valid file.
     if not Args.dts_file:
         print("ERROR: Missing source file.")
@@ -138,24 +138,24 @@ if __name__ == '__main__':
     dir = os.path.dirname(fullpath)
     base, ext = os.path.splitext(filename)
     abs_base = os.path.join(dir, base)
-    
+
     if ext != ".dts":
         print("ERROR: Expected DTS source file.")
         print("")
         exit(-1)
-            
+
     DTC_CPP_FLAGS="-E -Wp,-MD,{0}.pre.tmp -nostdinc -Iarch/{1}/boot/dts -Iarch/{1}/boot/dts/include -undef -D__DTS__  -x assembler-with-cpp"
     DTC_CPP_FLAGS=DTC_CPP_FLAGS.format(abs_base, Args.arch)
-    
+
     # Run source through the compiler preprocessor to handle include files
     TempFile = abs_base+".tmp"
     cmd=compiler+" "+DTC_CPP_FLAGS+" -o "+TempFile+" "+fullpath
     if not run_cmd(cmd=cmd, workingDir=kernel_src_loc):
         print("ERROR: Preprocessing of DTS failed.")
         exit(-1)
-        
+
     # Use Linux DTS compiler to produce the full DTS
-    DTC_DTC_FLAGS="-O dts -o {0}.out.dts -b 0 -i arch/{1}/boot/dts -d {0}.dtc.tmp {2}"
+    DTC_DTC_FLAGS="-f -O dts -o {0}.out.dts -b 0 -i arch/{1}/boot/dts -d {0}.dtc.tmp {2}"
     DTC_DTC_FLAGS=DTC_DTC_FLAGS.format(abs_base, Args.arch, TempFile)
     cmd="scripts/dtc/dtc "+DTC_DTC_FLAGS
     if not run_cmd(cmd=cmd, workingDir=kernel_src_loc):
@@ -167,14 +167,14 @@ if __name__ == '__main__':
     run_cmd(cmd)
 
     # Use Linux DTS compiler to produce the DTB from the full DTS
-    DTC_DTC_FLAGS="-I dts -O dtb -o {0}.dtb {0}.out.dts"
+    DTC_DTC_FLAGS="-f -I dts -O dtb -o {0}.dtb {0}.out.dts"
     DTC_DTC_FLAGS=DTC_DTC_FLAGS.format(abs_base)
     cmd="scripts/dtc/dtc "+DTC_DTC_FLAGS
     if not run_cmd(cmd=cmd, workingDir=kernel_src_loc):
         print("ERROR: Unbale to produce DTB file.")
         exit(-1)
-    
-    
+
+
 
 
 

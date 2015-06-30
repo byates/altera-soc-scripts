@@ -85,7 +85,7 @@ else:
         libc.sync()
 
 class SystemDevicesInterface(object):
-    
+
     LastCommandResult = 0
 
     def __init__(self, logFile, echo_cmds = False):
@@ -200,7 +200,7 @@ class SystemDevicesInterface(object):
         if not self.validate_device(targetDevice):
             print(Fore.RED + "ERROR: " + targetDevice.path + " is not a valid SDCard device. Aborting." + Fore.RESET)
             return(False)
-        cmd = "dd if="+file_path+" of=" + nodePath + " bs=512"
+        cmd = "dd if='"+file_path+"' of=" + nodePath + " bs=512"
         if not self.run_cmd(cmd):
             return(False)
         return(True)
@@ -276,7 +276,7 @@ class SystemDevicesInterface(object):
         if not self.run_cmd(Cmd):
             return(False)
         Cmd = 'e2fsck -fpv '+ NodePath
-        # Return value 1 just means the command 'fixed' any issues. 
+        # Return value 1 just means the command 'fixed' any issues.
         if not self.run_cmd(Cmd, suppress_errors={1}):
             return(False)
         return(True)
