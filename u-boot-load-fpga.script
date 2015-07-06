@@ -1,4 +1,4 @@
-fatload mmc 0:1 $fpgadata cv_sockit.rbf;
+fatload mmc 0:1 $fpgadata fpga.rbf;
 fpga load 0 $fpgadata $filesize;
 run bridge_enable_handoff;
 run mmcload;
