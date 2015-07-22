@@ -130,7 +130,7 @@ if __name__ == '__main__':
         exit(-1)
     if Args.dts_file:
         if not os.path.isfile(Args.dts_file):
-            print("Source file '" + Args.boot_loc + "' is not valid.")
+            print("Source file '" + Args.dts_file + "' is not valid.")
             exit(-1)
 
     fullpath = os.path.abspath(Args.dts_file)
