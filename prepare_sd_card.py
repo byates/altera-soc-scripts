@@ -95,7 +95,7 @@ class SystemDevicesInterface(object):
         self._shell_helper = ShellHelper(logFile)
         # This is the largest SDCARD size we expect to see and is used to validate the target
         # device (as a safety measure).
-        self.max_size_to_be_an_sdcard = reparted.Size(32, "GiB")
+        self.max_size_to_be_an_sdcard = reparted.Size(64, "GiB")
 
     def find_device(self, deviceName):
         for device in self.devices:
