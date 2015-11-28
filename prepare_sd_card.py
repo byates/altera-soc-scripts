@@ -381,9 +381,12 @@ def get_operation_selection(selectedDevice, operations):
     print("List of operations possible to perform on device ", end = '')
     print(Fore.GREEN + selectedDevice.path + Fore.RESET)
     for i, op in enumerate(operations):
-        print('  ' + str(i + 1) + ') ' + op[0])
+        if op[0] == "":
+            print('     -------')
+        else:
+            print('  ' + str(i + 1) + ') ' + op[0])
     UserInput = raw_input("Enter operation to perform then press <enter>:")
-    if UserInput == "":
+    if UserInput == "" or operations[int(UserInput) - 1][0]=="":
         print(Fore.RED + "User abort." + Fore.RESET)
         exit(0)
     try:
@@ -784,15 +787,16 @@ if __name__ == '__main__':
         # no command line options to tell us what to do so go run the interactive version
         #--------------------------------------------------------------------------------
         Operations = [
-                      ('mount partitions on SDCARD', MountAllPartitions),
-                      ('unmount partitions on SDCARD', UnmountAllPartitions),
                       ('re-partition and format entire SDCARD', PrepareSDCard),
                       ('install SPL to RAW partition', InstallSPL),
-                      ('format FAT partition', FormatFAT),
                       ('install boot files on FAT partition', WriteBootFiles),
-                      ('copy ROOTFS from SDCARD to local archive', CopyRootFS),
+                      ('install ROOTFS to SDCARD', InstallRootFS),
+                      ('', None),
+                      ('format FAT partition', FormatFAT),
                       ('format ROOTFS partition', DeleteAllOnRootFs),
-                      ('install ROOTFS to SDCARD', InstallRootFS)
+                      ('copy ROOTFS from SDCARD to local archive', CopyRootFS),
+                      ('mount partitions on SDCARD', MountAllPartitions),
+                      ('unmount partitions on SDCARD', UnmountAllPartitions)
                      ]
         # If a device was specified use it otherwise ask
         if ArgDevice:
