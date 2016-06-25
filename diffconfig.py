@@ -44,6 +44,9 @@ def readconfig(config_file):
         if line[:7] == "CONFIG_":
             name, val = line[7:].split("=", 1)
             d[name] = val
+        if line[:4] == "BR2_":
+            name, val = line[4:].split("=", 1)
+            d[name] = val
         if line[-11:] == " is not set":
             d[line[9:-11]] = "n"
     return d
