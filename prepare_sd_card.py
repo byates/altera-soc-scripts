@@ -35,6 +35,7 @@ from __future__ import print_function
 
 import sys
 import os
+import subprocess
 import argparse
 import glob
 import shutil
@@ -66,6 +67,10 @@ ROOTFS_PARTITION = 2
 RAW_PARTITION = 3
 USER_PARTITION = 4
 
+NODE_SUFFIX_FAT = str(FAT_PARTITION)
+NODE_SUFFIX_ROOTFS = str(ROOTFS_PARTITION)
+NODE_SUFFIX_RAW = str(RAW_PARTITION)
+NODE_SUFFIX_USER = str(USER_PARTITION)
 # We look for Preloader, FAT, and ROOTFS files in a set of directories under a common
 # directory (args.images_loc). Each partition type has a directory.
 # The path to each partition's files is then:
@@ -75,6 +80,7 @@ USER_PARTITION = 4
 IMAGE_FILES_RAW_LOC = "raw_partition"
 IMAGE_FILES_FAT_LOC = "fat_partition"
 IMAGE_FILES_ROOTFS_LOC = "rootfs_partition"
+IMAGE_FILES_USER_LOC = "user_partition"
 
 # SYNC is used to flush file system buffers so that that SDCard gets the data
 # we have written. It is avaialbe natively in python3 but not in 2.
@@ -234,7 +240,7 @@ class SystemDevicesInterface(object):
             print(Fore.RED + "ERROR: " + targetDevice.path + " is not a valid SDCard device. Aborting." + Fore.RESET)
             return(False)
 
-        NodePath = targetDevice.path + str(FAT_PARTITION)
+        NodePath = targetDevice.path + NODE_SUFFIX_FAT
         print("Formatting " + NodePath + ' as BOOT:FAT32')
         # First zero out the first sector per http://linux.die.net/man/8/fdisk
         Cmd = 'dd if=/dev/zero of='+NodePath+' bs=512 count=1'
@@ -253,7 +259,7 @@ class SystemDevicesInterface(object):
         if not self.validate_device(targetDevice):
             print(Fore.RED + "ERROR: " + targetDevice.path + " is not a valid SDCard device. Aborting." + Fore.RESET)
             return(False)
-        NodePath = targetDevice.path + str(ROOTFS_PARTITION)
+        NodePath = targetDevice.path + NODE_SUFFIX_ROOTFS
         print("Formatting " + NodePath + ' as ROOTFS:EXT4')
         # These values are suppose to work well for SDCARDS.
         # See http://docs.pikatech.com/display/DEV/Optimizing+File+System+Parameters+of+SD+card+for+use+on+WARP+V3
@@ -283,12 +289,12 @@ class SystemDevicesInterface(object):
         if not self.validate_device(targetDevice):
             print(Fore.RED + "ERROR: " + targetDevice.path + " is not a valid SDCard device. Aborting." + Fore.RESET)
             return(False)
-        NodePath = targetDevice.path + str(USER_PARTITION)
+        NodePath = targetDevice.path + NODE_SUFFIX_USER
         print("Formatting " + NodePath + ' as USER:EXT4')
         # These values are suppose to work well for SDCARDS.
         # See http://docs.pikatech.com/display/DEV/Optimizing+File+System+Parameters+of+SD+card+for+use+on+WARP+V3
         # See https://developer.ridgerun.com/wiki/index.php/High_performance_SD_card_tuning_using_the_EXT4_file_system
-        print("Enter YES for journal support on EXT4 partition or NO (default) for data_writeback:")
+        print("Enter YES for journal support on USER partition or NO (default) for data_writeback:")
         UserInput = raw_input("Type " + Fore.RED + "yes" + Fore.RESET + " or anything else for default: ")
         if UserInput == "yes":
             Cmd = 'mkfs.ext4 -E stride=2,stripe-width=256 -b 4096 -L "USER" '+ NodePath
@@ -320,7 +326,7 @@ class SystemDevicesInterface(object):
         if not self.validate_device(targetDevice):
             print(Fore.RED + "ERROR: " + targetDevice.path + " is not a valid SDCard device. Aborting." + Fore.RESET)
             return(False)
-        NodePath = targetDevice.path + str(FAT_PARTITION)
+        NodePath = targetDevice.path + NODE_SUFFIX_FAT
         print("Mounting " + NodePath)
         user = os.getenv("SUDO_USER")
         Cmd = 'sudo -u '+user+' udisks --mount ' + NodePath
@@ -335,7 +341,7 @@ class SystemDevicesInterface(object):
         if not self.validate_device(targetDevice):
             print(Fore.RED + "ERROR: " + targetDevice.path + " is not a valid SDCard device. Aborting." + Fore.RESET)
             return(False)
-        NodePath = targetDevice.path + str(ROOTFS_PARTITION)
+        NodePath = targetDevice.path + NODE_SUFFIX_ROOTFS
         print("Mounting " + NodePath)
         Cmd = 'udisks --mount ' + NodePath
         if not self.run_cmd(Cmd):
@@ -496,7 +502,7 @@ def PrepareSDCard(sysDevicesIF, selectedDevice, args, verifyOp = True):
     StartOfBootPartition  = 1024
     BlocksInBootPartition = int( 1 * CYLINDER_SIZE_BLKS) - 1024
     StartOfFatPartition   = int( 1 * CYLINDER_SIZE_BLKS)
-    BlocksInFatPartition  = int( 9 * CYLINDER_SIZE_BLKS)  # ~60MiB
+    BlocksInFatPartition  = int(10 * CYLINDER_SIZE_BLKS)  # ~60MiB
     StartOfExtPartition   = int(11 * CYLINDER_SIZE_BLKS)
     BlocksInExtPartition  = int(99 * CYLINDER_SIZE_BLKS)  # ~600MiB
     StartOfUserPartition  = int(110 * CYLINDER_SIZE_BLKS)
@@ -530,7 +536,7 @@ def PrepareSDCard(sysDevicesIF, selectedDevice, args, verifyOp = True):
     print(Fore.GREEN + "Repartitioning and Formatting complete." + Fore.RESET)
 
 def InstallSPL(sysDevicesIF, selectedDevice, args):
-    NodePath = selectedDevice.path + str(RAW_PARTITION)
+    NodePath = selectedDevice.path + NODE_SUFFIX_RAW
     if args.spl_loc:
         SourceLoc = args.spl_loc
     else:
@@ -581,7 +587,7 @@ def FormatFAT(sysDevicesIF, selectedDevice, args):
         pass
     print(Fore.GREEN + "Formatting FAT partition complete." + Fore.RESET)
 
-def DeleteFATContents(sysDevicesIF, DestPath):
+def DeleteDirContents(sysDevicesIF, DestPath):
     for file_object in os.listdir(DestPath):
         file_object_path = os.path.join(DestPath, file_object)
         if os.path.isfile(file_object_path):
@@ -604,7 +610,7 @@ def WriteBootFiles(sysDevicesIF, selectedDevice, args, verifyOp = True):
     print("Delete all current files on FAT partition?")
     UserInput = raw_input("Type " + Fore.RED + "'yes'" + Fore.RESET + " or 'no (default)': ")
     if UserInput == "yes":
-        DeleteFATContents(sysDevicesIF, DestPath)
+        DeleteDirContents(sysDevicesIF, DestPath)
 
     if args.boot_loc:
         SourceLoc = args.boot_loc
@@ -785,6 +791,52 @@ def InstallRootFS(sysDevicesIF, selectedDevice, args, verifyOp = True):
     else:
         exit(-1)
 
+def InstallUserFiles(sysDevicesIF, selectedDevice, args, verifyOp = True):
+    DestPath = sysDevicesIF.is_mounted(selectedDevice, USER_PARTITION)
+    if not DestPath:
+        if not sysDevicesIF.mount_user_partition(selectedDevice):
+            exit(-1)
+        DestPath = sysDevicesIF.is_mounted(selectedDevice, USER_PARTITION)
+        if not DestPath:
+            print(Fore.RED + "ERROR: Unable to determine USER mount point." + Fore.RESET)
+            exit(-1)
+    print("")
+    print("Delete all current files on USER partition?")
+    UserInput = raw_input("Type " + Fore.RED + "'yes'" + Fore.RESET + " or 'no (default)': ")
+    if UserInput == "yes":
+        DeleteDirContents(sysDevicesIF, DestPath)
+
+    if args.user_loc:
+        SourceLoc = args.user_loc
+    else:
+        print("")
+        print("USER image directories are located here:")
+        ImagesUserLoc = os.path.abspath(os.path.join(args.images_loc, IMAGE_FILES_USER_LOC))
+        print(Fore.GREEN+"  '"+ImagesUserLoc+"'"+Fore.RESET)
+        print("Choose USER source directory from list:")
+        fileList = glob.glob(ImagesUserLoc+"/*/")
+        for i, file in enumerate(fileList):
+            file = os.path.basename(os.path.normpath(file))
+            print('  ' + str(i + 1) + ') ' + file)
+        UserInput = raw_input("Enter location # then press <enter>:")
+        if UserInput == "":
+            print(Fore.RED + "User abort." + Fore.RESET)
+            return
+        SourceLoc = fileList[int(UserInput) - 1]
+    print("BOOT files will be read from : " + SourceLoc)
+    print("BOOT files will be written to: " + DestPath)
+    if verifyOp:
+        print("Are you sure you want to continue?")
+        UserInput = raw_input("Type " + Fore.GREEN + "yes" + Fore.RESET + " or anything else to abort: ")
+        if UserInput != "yes":
+            print(Fore.RED + "User abort." + Fore.RESET)
+            return
+
+    # Copy everything in the source directory to the dest directory
+    subprocess.call("cp -rf "+SourceLoc+"* "+DestPath, shell=True)
+    sync()
+    print(Fore.GREEN + "USER files have been copied to USER partition." + Fore.RESET)
+
 ####################################################################################################
 
 if __name__ == '__main__':
@@ -809,6 +861,8 @@ if __name__ == '__main__':
                         help = 'Specifies the file path for storing a ROOTFS copy.')
     Parser.add_argument('-b', '--boot_loc',
                         help = 'Specifies the source data for the files written to the FAT partition.')
+    Parser.add_argument('-u', '--user_loc',
+                        help = 'Specifies the source data for the files written to the USER partition.')
     Parser.add_argument('--logfile', default = 'log.txt',
                         help = 'Used to override the default log file.')
     Parser.add_argument('-f', '--force', action = 'store_true',
@@ -850,6 +904,10 @@ if __name__ == '__main__':
         if not os.path.isdir(Args.rootfs_loc):
             print(Fore.RED + "ROOTFS files location specified '" + Args.boot_loc + "' is not valid." + Fore.RESET)
             exit(-1)
+    if Args.user_loc:
+        if not os.path.isdir(Args.user_loc):
+            print(Fore.RED + "USER files location specified '" + Args.user_loc + "' is not valid." + Fore.RESET)
+            exit(-1)
 
     print("------------------------------------------------------")
     print("| Script to create Boot SD card for Altera SOC FPGAs |")
@@ -865,6 +923,7 @@ if __name__ == '__main__':
                       ('install SPL to RAW partition', InstallSPL),
                       ('install boot files on FAT partition', WriteBootFiles),
                       ('install ROOTFS to SDCARD', InstallRootFS),
+                      ('install USER files to SDCARD', InstallUserFiles),
                       ('', None),
                       ('format FAT partition', FormatFAT),
                       ('format ROOTFS partition', DeleteAllOnRootFs),
