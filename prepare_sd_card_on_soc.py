@@ -363,7 +363,7 @@ class SystemDevicesInterface(object):
         if not self.validate_device(targetDevice):
             print(Fore.RED + "ERROR: " + targetDevice.path + " is not a valid SDCard device. Aborting." + Fore.RESET)
             return(False)
-        NodePath = targetDevice.path + str(USER_PARTITION)
+        NodePath = targetDevice.path + NODE_SUFFIX_USER
         print("Mounting " + NodePath)
         Cmd = 'mount -t ext4 ' + NodePath + " " + USER_MOUNT_POINT
         if not self.run_cmd(Cmd):
@@ -460,6 +460,8 @@ def MountAllPartitions(sysDevicesIF, selectedDevice, args):
     if not sysDevicesIF.mount_fat_partition(selectedDevice):
         exit(-1)
     if not sysDevicesIF.mount_rootfs_partition(selectedDevice):
+        exit(-1)
+    if not sysDevicesIF.mount_user_partition(selectedDevice):
         exit(-1)
 
 def UnmountAllPartitions(sysDevicesIF, selectedDevice, args):
