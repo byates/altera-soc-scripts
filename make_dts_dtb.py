@@ -159,7 +159,7 @@ if __name__ == '__main__':
     DTC_DTC_FLAGS=DTC_DTC_FLAGS.format(abs_base, Args.arch, TempFile)
     cmd="scripts/dtc/dtc "+DTC_DTC_FLAGS
     if not run_cmd(cmd=cmd, workingDir=kernel_src_loc):
-        print("ERROR: Unbale to produce full DTS file.")
+        print("ERROR: Unable to produce full DTS file.")
         exit(-1)
 
     # remove temporary files
@@ -171,7 +171,7 @@ if __name__ == '__main__':
     DTC_DTC_FLAGS=DTC_DTC_FLAGS.format(abs_base)
     cmd="scripts/dtc/dtc "+DTC_DTC_FLAGS
     if not run_cmd(cmd=cmd, workingDir=kernel_src_loc):
-        print("ERROR: Unbale to produce DTB file.")
+        print("ERROR: Unable to produce DTB file.")
         exit(-1)
 
 
