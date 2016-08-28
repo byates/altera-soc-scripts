@@ -98,6 +98,10 @@ if __name__ == '__main__':
     # try the environment variable.
     if Args.kernel_loc == "":
         kernel_src_loc = os.getenv("ALTERA_SOC_LINUX_KERNEL_LOC")
+        if not kernel_src_loc:
+            print("Kernel source location not specified")
+            exit(-1)
+
     else:
         kernel_src_loc = Args.kernel_loc
     if ( (not os.path.isdir(kernel_src_loc)) or \
