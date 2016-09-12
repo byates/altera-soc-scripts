@@ -45,21 +45,9 @@ import reparted
 from shell_helper import ShellHelper
 from time import sleep
 
-# A neat trick is to make our heads and sectors per track line up (to 128KiB) by using
-# 224 heads and 56 sectors per track. An SDCARD is not a hard drive and it does not have
-# sectors, tracks, OR heads - but it pretends to be a hard drive, and so, it has
-# a drive geometry just like any hard drive would. This geometry business of
-# heads/sectors/tracks and so on has no physical relationship to actual physical
-# properties on our SDCARD, it just helps to make a convenient way to talk about
-# how data is organised on the drive. Note that there are other combinations that
-# also make 128K alignment easy, but this is the one mentioned in several SSD and
-# flash articles around the web.
-HEADS = 224
-SECTORS = 56
 SECTOR_SIZE = 512  # bytes
-# CYLINDER_SIZE_BYTES = ~6MiB
-CYLINDER_SIZE_BYTES = HEADS * SECTORS * SECTOR_SIZE
-CYLINDER_SIZE_BLKS = CYLINDER_SIZE_BYTES / 1024
+# 1MiB alignment (arbitrary but should be multiple of 128KiB)
+SECTOR_ALIGNMENT = (1024*1024) / SECTOR_SIZE
 
 # Changing these will require changing the preloader and u-boot images.
 FAT_PARTITION = 1
@@ -71,6 +59,9 @@ NODE_SUFFIX_FAT = str(FAT_PARTITION)
 NODE_SUFFIX_ROOTFS = str(ROOTFS_PARTITION)
 NODE_SUFFIX_RAW = str(RAW_PARTITION)
 NODE_SUFFIX_USER = str(USER_PARTITION)
+FAT_MOUNT_POINT = "/mnt/emmc_p1"
+ROOTFS_MOUNT_POINT = "/mnt/emmc_p2"
+USER_MOUNT_POINT = "/mnt/emmc_p4"
 # We look for Preloader, FAT, and ROOTFS files in a set of directories under a common
 # directory (args.images_loc). Each partition type has a directory.
 # The path to each partition's files is then:
@@ -226,8 +217,7 @@ class SystemDevicesInterface(object):
             for item in part:
                 SFDiskArgs = SFDiskArgs + item + ','
             SFDiskArgs = SFDiskArgs + "\n"
-        Cylinders = int(targetDevice.size.to("B") / CYLINDER_SIZE_BYTES)
-        Cmd = "sfdisk -f -D -H " + str(HEADS) + " -S "+ str(SECTORS)+" -C " + str(Cylinders) + " -uB " + targetDevice.path
+        Cmd = "sfdisk " + targetDevice.path
         if not self.run_cmd(Cmd, inputStr = SFDiskArgs):
             return(False)
         return(True)
@@ -328,8 +318,8 @@ class SystemDevicesInterface(object):
             return(False)
         NodePath = targetDevice.path + NODE_SUFFIX_FAT
         print("Mounting " + NodePath)
-        user = os.getenv("SUDO_USER")
-        Cmd = 'sudo -u '+user+' udisks --mount ' + NodePath
+        user = os.getenv("SUDO_UID")
+        Cmd = 'sudo  mount '+NodePath+' '+FAT_MOUNT_POINT+' -o uid='+user+',gid='+user+',utf8,dmask=027,fmask=137'
         if not self.run_cmd(Cmd):
             return(False)
         return(True)
@@ -343,7 +333,7 @@ class SystemDevicesInterface(object):
             return(False)
         NodePath = targetDevice.path + NODE_SUFFIX_ROOTFS
         print("Mounting " + NodePath)
-        Cmd = 'udisks --mount ' + NodePath
+        Cmd = 'sudo  mount '+NodePath+' '+ROOTFS_MOUNT_POINT
         if not self.run_cmd(Cmd):
             return(False)
         return(True)
@@ -357,7 +347,7 @@ class SystemDevicesInterface(object):
             return(False)
         NodePath = targetDevice.path + str(USER_PARTITION)
         print("Mounting " + NodePath)
-        Cmd = 'udisks --mount ' + NodePath
+        Cmd = 'sudo  mount '+NodePath+' '+USER_MOUNT_POINT
         if not self.run_cmd(Cmd):
             return(False)
         return(True)
@@ -454,6 +444,8 @@ def MountAllPartitions(sysDevicesIF, selectedDevice, args):
         exit(-1)
     if not sysDevicesIF.mount_rootfs_partition(selectedDevice):
         exit(-1)
+    if not sysDevicesIF.mount_user_partition(selectedDevice):
+        exit(-1)
 
 def UnmountAllPartitions(sysDevicesIF, selectedDevice, args):
     if not sysDevicesIF.unmount_device(selectedDevice):
@@ -497,22 +489,22 @@ def PrepareSDCard(sysDevicesIF, selectedDevice, args, verifyOp = True):
         exit(-1)
     print(Fore.GREEN + "Repartitioning to create FAT32 and Linux partitions." + Fore.RESET)
     # Set the SDCARD geometry such that the partitions align on cylinder boundaries.
-    CylindersInDevice = int(selectedDevice.size.to("B") / CYLINDER_SIZE_BYTES)
-    TotalBlocksInDevice = int(CylindersInDevice * CYLINDER_SIZE_BLKS)
-    StartOfBootPartition  = 1024
-    BlocksInBootPartition = int( 1 * CYLINDER_SIZE_BLKS) - 1024
-    StartOfFatPartition   = int( 1 * CYLINDER_SIZE_BLKS)
-    BlocksInFatPartition  = int(10 * CYLINDER_SIZE_BLKS)  # ~60MiB
-    StartOfExtPartition   = int(11 * CYLINDER_SIZE_BLKS)
-    BlocksInExtPartition  = int(99 * CYLINDER_SIZE_BLKS)  # ~600MiB
-    StartOfUserPartition  = int(110 * CYLINDER_SIZE_BLKS)
-    BlocksInUserPartition = int((TotalBlocksInDevice-StartOfUserPartition))
+    AlignmentBlksInDevice  = int(selectedDevice.size.to("B") / SECTOR_ALIGNMENT)
+    TotalSectorsInDevice   = int(AlignmentBlksInDevice * SECTOR_SIZE)
+    StartOfBootPartition   = int(SECTOR_ALIGNMENT)        #  1MiB
+    SectorsInBootPartition = int(  9 * SECTOR_ALIGNMENT)  #    [9MiB]
+    StartOfFatPartition    = int( 10 * SECTOR_ALIGNMENT)  #  10MiB
+    SectorsInFatPartition  = int(190 * SECTOR_ALIGNMENT)  #    [190MiB]
+    StartOfExtPartition    = int(200 * SECTOR_ALIGNMENT)  # 200MiB
+    SectorsInExtPartition  = int(400 * SECTOR_ALIGNMENT)  #    [400MiB]
+    StartOfUserPartition   = int(600 * SECTOR_ALIGNMENT)  # 600MiB
+    SectorsInUserPartition = int((TotalSectorsInDevice-StartOfUserPartition))
     # [ start, size, id/type, bootable ]
     Partitions = [ None, None, None, None ]
-    Partitions[FAT_PARTITION-1]    = (str(StartOfFatPartition) , str(BlocksInFatPartition) , "0x0B", "*")
-    Partitions[ROOTFS_PARTITION-1] = (str(StartOfExtPartition) , str(BlocksInExtPartition) , "0x83", "-")
-    Partitions[RAW_PARTITION-1]    = (str(StartOfBootPartition), str(BlocksInBootPartition), "0xA2", "-")
-    Partitions[USER_PARTITION-1]   = (str(StartOfUserPartition), str(BlocksInUserPartition), "0x83", "-")
+    Partitions[FAT_PARTITION-1]    = (str(StartOfFatPartition) , str(SectorsInFatPartition) , "0C", "*")
+    Partitions[ROOTFS_PARTITION-1] = (str(StartOfExtPartition) , str(SectorsInExtPartition) , "83", "-")
+    Partitions[RAW_PARTITION-1]    = (str(StartOfBootPartition), str(SectorsInBootPartition), "A2", "-")
+    Partitions[USER_PARTITION-1]   = (str(StartOfUserPartition), str(SectorsInUserPartition), "83", "-")
     if not sysDevicesIF.create_partitions(selectedDevice, Partitions):
         exit(-1)
 
