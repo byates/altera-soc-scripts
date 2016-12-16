@@ -380,8 +380,8 @@ class SystemDevicesInterface(object):
         """
         Copies all the rootfs files to a tar.gz archive.
         """
-        cmd = "tar --numeric-owner --one-file-system -cpzf --exclude=./proc --exclude=./lost+found"
-        cmd = cmd + " --exclude=./sys --exclude=./mnt --exclude=./media --exclude=./dev '"+dst_file_path+"' ."
+        cmd = "tar --numeric-owner --exclude=./proc --exclude=./lost+found"
+        cmd = cmd + " --exclude=./sys --exclude=./mnt --exclude=./media --exclude=./dev -cpzf '"+dst_file_path+"' ."
         if not self.run_cmd(cmd, workingDir=nodePath):
             return(False)
         return(True)
@@ -519,8 +519,8 @@ def PrepareSDCard(sysDevicesIF, selectedDevice, args, verifyOp = True):
     StartOfFatPartition   = int( 1 * CYLINDER_SIZE_BLKS)
     BlocksInFatPartition  = int(10 * CYLINDER_SIZE_BLKS)  # ~60MiB
     StartOfExtPartition   = int(11 * CYLINDER_SIZE_BLKS)
-    BlocksInExtPartition  = int(99 * CYLINDER_SIZE_BLKS)  # ~600MiB
-    StartOfUserPartition  = int(110 * CYLINDER_SIZE_BLKS)
+    BlocksInExtPartition  = int(399 * CYLINDER_SIZE_BLKS)  # ~2400MiB
+    StartOfUserPartition  = int(410 * CYLINDER_SIZE_BLKS)
     BlocksInUserPartition = int((TotalBlocksInDevice-StartOfUserPartition))
     # [ start, size, id/type, bootable ]
     Partitions = [ None, None, None, None ]
@@ -686,7 +686,7 @@ def CopyRootFS(sysDevicesIF, selectedDevice, args, verifyOp = True):
         if (BaseLoc == ""):
             print(Fore.RED + "User abort." + Fore.RESET)
             return
-        BaseLoc = os.path.join(DestLoc, raw_input(">"))
+        BaseLoc = os.path.join(DestLoc, BaseLoc)
         DestLoc = BaseLoc + ".tar.gz"
     print("ROOTFS files will be read from : " + SrcPath)
     print("ROOTFS files will be written to: " + DestLoc)
@@ -719,7 +719,7 @@ tar -C $1 -xzpf """
     text_file.write(os.path.basename(DestLoc)+"\n")
     text_file.close()
     # fix ownership and permissions
-    sysDevicesIF.change_file_owner(ScriptLoc, root)
+    sysDevicesIF.change_file_owner(ScriptLoc, "root")
     sysDevicesIF.change_file_permissions(ScriptLoc, "a+x")
 
 
