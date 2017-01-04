@@ -503,8 +503,8 @@ def PrepareSDCard(sysDevicesIF, selectedDevice, args, verifyOp = True):
     StartOfFatPartition    = int( 10 * SECTOR_ALIGNMENT)  #  10MiB
     SectorsInFatPartition  = int(190 * SECTOR_ALIGNMENT)  #    [190MiB]
     StartOfExtPartition    = int(200 * SECTOR_ALIGNMENT)  # 200MiB
-    SectorsInExtPartition  = int(400 * SECTOR_ALIGNMENT)  #    [400MiB]
-    StartOfUserPartition   = int(600 * SECTOR_ALIGNMENT)  # 600MiB
+    SectorsInExtPartition  = int(1000 * SECTOR_ALIGNMENT)  #    [1000MiB]
+    StartOfUserPartition   = int(1200 * SECTOR_ALIGNMENT)  # 1200MiB
     SectorsInUserPartition = int((TotalSectorsInDevice-StartOfUserPartition))
     # [ start, size, id/type, bootable ]
     Partitions = [ None, None, None, None ]
