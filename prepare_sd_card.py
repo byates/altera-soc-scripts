@@ -40,10 +40,14 @@ import argparse
 import glob
 import shutil
 import pprint
+import fnmatch
 from colorama import Fore, Style
 import reparted
 from shell_helper import ShellHelper
 from time import sleep
+
+MIB = (1024*1024)
+GIB = (MIB * 1024)
 
 SECTOR_SIZE = 512  # bytes
 # 1MiB alignment (arbitrary but should be multiple of 128KiB)
@@ -51,8 +55,8 @@ SECTOR_ALIGNMENT = (1024*1024) / SECTOR_SIZE
 
 # Changing these will require changing the preloader and u-boot images.
 FAT_PARTITION = 1
-ROOTFS_PARTITION = 2
-RAW_PARTITION = 3
+RAW_PARTITION = 2
+ROOTFS_PARTITION = 3
 USER_PARTITION = 4
 
 NODE_SUFFIX_FAT = str(FAT_PARTITION)
@@ -60,7 +64,7 @@ NODE_SUFFIX_ROOTFS = str(ROOTFS_PARTITION)
 NODE_SUFFIX_RAW = str(RAW_PARTITION)
 NODE_SUFFIX_USER = str(USER_PARTITION)
 FAT_MOUNT_POINT = "/mnt/emmc_p1"
-ROOTFS_MOUNT_POINT = "/mnt/emmc_p2"
+ROOTFS_MOUNT_POINT = "/mnt/emmc_p3"
 USER_MOUNT_POINT = "/mnt/emmc_p4"
 
 # We look for Preloader, FAT, and ROOTFS files in a set of directories under a common
@@ -205,6 +209,7 @@ class SystemDevicesInterface(object):
         cmd = "dd if='"+file_path+"' of=" + nodePath + " bs=512"
         if not self.run_cmd(cmd):
             return(False)
+        print(Fore.GREEN + "SPL written" + Fore.RESET)
         return(True)
 
     def create_partitions(self, targetDevice, partitions):
@@ -459,6 +464,21 @@ def UnmountAllPartitions(sysDevicesIF, selectedDevice, args):
         exit(-1)
 
 def PrepareSDCard(sysDevicesIF, selectedDevice, args, verifyOp = True):
+    # Set the SDCARD geometry such that the partitions align on cylinder boundaries.
+    SectorsInDevice = int(selectedDevice.size.to("B") / SECTOR_SIZE)
+    StartOfFatPartition    = ((1*1024*1024) / SECTOR_SIZE)
+    SectorsInFatPartition  = ((256*1024*1024) / SECTOR_SIZE) - StartOfFatPartition # ~256MiB
+    BytesInFatPartition    = SectorsInFatPartition * float(SECTOR_SIZE)
+    StartOfRawPartition   = StartOfFatPartition + SectorsInFatPartition
+    SectorsInRawPartition = ((16*1024*1024) / SECTOR_SIZE) # 16MiB
+    BytesInRawPartition    = SectorsInRawPartition * float(SECTOR_SIZE)
+    StartOfRootfsPartition    = StartOfRawPartition + SectorsInRawPartition
+    SectorsInRootfsPartition  = ((1280*1024*1024) / SECTOR_SIZE)
+    BytesInRootfsPartition    = SectorsInRootfsPartition * float(SECTOR_SIZE)
+    StartOfUserPartition   = StartOfRootfsPartition + SectorsInRootfsPartition
+    SectorsInUserPartition = int((SectorsInDevice-StartOfUserPartition)) & 0xFFFFFF00
+    BytesInUserPartition    = SectorsInUserPartition * float(SECTOR_SIZE)
+
     if verifyOp:
         print("")
         print(Fore.RED + "##########################################################" + Fore.RESET)
@@ -481,6 +501,12 @@ def PrepareSDCard(sysDevicesIF, selectedDevice, args, verifyOp = True):
         except:
             pass
         print("")
+        print(Fore.YELLOW + "#### NEW DEVICE PARTITION MAP ####" + Fore.RESET)
+        print(Fore.YELLOW + "  DeviceSize: " + selectedDevice.size.pretty(units = "GiB") +"  ({} sectors)".format(SectorsInDevice) + Fore.RESET)
+        print(Fore.YELLOW + "  FAT:      {:6.2f}MiB - {} to {}".format(BytesInFatPartition / MIB, StartOfFatPartition, StartOfFatPartition+SectorsInFatPartition-1) + Fore.RESET)
+        print(Fore.YELLOW + "  Raw:      {:6.2f}MiB - {} to {}".format(BytesInRawPartition / MIB, StartOfRawPartition, StartOfRawPartition+SectorsInRawPartition-1) + Fore.RESET)
+        print(Fore.YELLOW + "  RootFS:   {:6.2f}GiB - {} to {}".format(BytesInRootfsPartition / GIB, StartOfRootfsPartition, StartOfRootfsPartition+SectorsInRootfsPartition-1) + Fore.RESET)
+        print(Fore.YELLOW + "  User:     {:6.2f}GiB - {} to {}".format(BytesInUserPartition / GIB, StartOfUserPartition, StartOfUserPartition+SectorsInUserPartition-1) + Fore.RESET)
         # Verify that the user REALLY wants to do this
         print("Type in 'yippie ki-yay' then press <enter> to perform the operation")
         UserInput = raw_input("or anything else to abort: ")
@@ -495,23 +521,12 @@ def PrepareSDCard(sysDevicesIF, selectedDevice, args, verifyOp = True):
     if not sysDevicesIF.zero_first_1mb(selectedDevice):
         exit(-1)
     print(Fore.GREEN + "Repartitioning to create FAT32 and Linux partitions." + Fore.RESET)
-    # Set the SDCARD geometry such that the partitions align on cylinder boundaries.
-    AlignmentBlksInDevice  = int(selectedDevice.size.to("B") / SECTOR_ALIGNMENT)
-    TotalSectorsInDevice   = int(AlignmentBlksInDevice * SECTOR_SIZE)
-    StartOfBootPartition   = int(SECTOR_ALIGNMENT)        #  1MiB
-    SectorsInBootPartition = int(  9 * SECTOR_ALIGNMENT)  #    [9MiB]
-    StartOfFatPartition    = int( 10 * SECTOR_ALIGNMENT)  #  10MiB
-    SectorsInFatPartition  = int(190 * SECTOR_ALIGNMENT)  #    [190MiB]
-    StartOfExtPartition    = int(200 * SECTOR_ALIGNMENT)  # 200MiB
-    SectorsInExtPartition  = int(1000 * SECTOR_ALIGNMENT)  #    [1000MiB]
-    StartOfUserPartition   = int(1200 * SECTOR_ALIGNMENT)  # 1200MiB
-    SectorsInUserPartition = int((TotalSectorsInDevice-StartOfUserPartition))
     # [ start, size, id/type, bootable ]
     Partitions = [ None, None, None, None ]
-    Partitions[FAT_PARTITION-1]    = (str(StartOfFatPartition) , str(SectorsInFatPartition) , "0C", "*")
-    Partitions[ROOTFS_PARTITION-1] = (str(StartOfExtPartition) , str(SectorsInExtPartition) , "83", "-")
-    Partitions[RAW_PARTITION-1]    = (str(StartOfBootPartition), str(SectorsInBootPartition), "A2", "-")
-    Partitions[USER_PARTITION-1]   = (str(StartOfUserPartition), str(SectorsInUserPartition), "83", "-")
+    Partitions[FAT_PARTITION-1]      = (str(StartOfFatPartition) , str(SectorsInFatPartition) , "0x0B", "*")
+    Partitions[RAW_PARTITION-1]      = (str(StartOfRawPartition), str(SectorsInRawPartition), "0xA2", "-")
+    Partitions[ROOTFS_PARTITION-1]   = (str(StartOfRootfsPartition), str(SectorsInRootfsPartition), "0x83", "-")
+    Partitions[USER_PARTITION-1]     = (str(StartOfUserPartition), str(SectorsInUserPartition), "0x83", "-")
     if not sysDevicesIF.create_partitions(selectedDevice, Partitions):
         exit(-1)
 
@@ -544,7 +559,11 @@ def InstallSPL(sysDevicesIF, selectedDevice, args):
         ImagesPreloaderLoc = os.path.abspath(os.path.join(args.images_loc, IMAGE_FILES_RAW_LOC))
         print(Fore.GREEN+"  '"+ImagesPreloaderLoc+"'"+Fore.RESET)
         print("Choose preloader image from list:")
-        fileList = glob.glob(ImagesPreloaderLoc+"/*.bin")
+        #fileList = glob.glob(pathname=ImagesPreloaderLoc+"/*.sfp", recursive=True)
+        fileList = []
+        for root, dirnames, filenames in os.walk(ImagesPreloaderLoc):
+            for filename in fnmatch.filter(filenames, '*.sfp'):
+                fileList.append(os.path.join(root, filename))
         for i, file in enumerate(fileList):
             file = os.path.basename(os.path.normpath(file))
             print('  ' + str(i + 1) + ') ' + file)
@@ -880,11 +899,6 @@ if __name__ == '__main__':
         SysDevicesIF.list_devices()
         exit(0)
 
-    if Args.device:
-        ArgDevice = SysDevicesIF.find_device(Args.device)
-    else:
-        ArgDevice = None
-
     # If the user has specified a SPL file location.
     # Check to make sure it is a valid file.
     if Args.spl_loc:
@@ -934,7 +948,8 @@ if __name__ == '__main__':
                       ('unmount partitions on SDCARD', UnmountAllPartitions)
                      ]
         # If a device was specified use it otherwise ask
-        if ArgDevice:
+        if Args.device:
+            ArgDevice = SysDevicesIF.find_device(Args.device)
             if not SysDevicesIF.validate_device(ArgDevice):
                 exit(-1)
             SelectedDrive = ArgDevice
@@ -950,16 +965,16 @@ if __name__ == '__main__':
     if Args.verbose:
         pprint.pprint(Args)
 
+    if Args.device:
+        ArgDevice = SysDevicesIF.find_device(Args.device)
+        if not SysDevicesIF.validate_device(ArgDevice):
+            exit(-1)
+        SelectedDrive = ArgDevice
+    else:
+        SelectedDrive = get_drive_selection(SysDevicesIF)
     # Verify that the specified drive is not a BIG drive.  This is a simple test to
     # ensure that we are not going to try to format any thing other than an SD card.
     # SD cards should be less than 32GiB.
-    if not Args.device:
-        print("ERROR: Missing target SDCard device.")
-        print("")
-        Parser.print_help()
-        exit(-1)
-    SelectedDrive = get_drive_selection(SysDevicesIF)
-
     if not SysDevicesIF.validate_device(SelectedDrive):
         print("ERROR: Failed device validation for '"+SelectedDrive+"'")
         exit(-1)

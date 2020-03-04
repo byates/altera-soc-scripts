@@ -77,7 +77,7 @@ if __name__ == '__main__':
     # to creating the esd_shell_utilities class instance.
     Parser = argparse.ArgumentParser()
     Parser.add_argument('-k', '--kernel_loc', default = '',
-                        help = 'Used to specify the location of the kernel source. Default=$ALTERA_SOC_LINUX_KERNEL_LOC')
+                        help = 'Used to specify the location of the kernel source. Default=$SOC_LINUX_KERNEL_LOC')
     Parser.add_argument('-c', '--compiler', default = '',
                         help = 'Used to specify the location of compiler to use. Default=$CROSS_COMPILE')
     Parser.add_argument('-a', '--arch', default = 'arm',
@@ -97,9 +97,9 @@ if __name__ == '__main__':
     # If the user has specified a location for the kernel source then use it otherwise
     # try the environment variable.
     if Args.kernel_loc == "":
-        kernel_src_loc = os.getenv("ALTERA_SOC_LINUX_KERNEL_LOC")
+        kernel_src_loc = os.getenv("SOC_LINUX_KERNEL_LOC")
         if not kernel_src_loc:
-            print("Kernel source location not specified")
+            print("Kernel source location not specified: SOC_LINUX_KERNEL_LOC")
             exit(-1)
 
     else:
@@ -116,7 +116,7 @@ if __name__ == '__main__':
     if Args.compiler == "":
         compiler = os.getenv("CROSS_COMPILE")
         if not compiler:
-            print("ERROR: No compiler specified.")
+            print("ERROR: No compiler specified: $CROSS_COMPILE")
             Parser.print_help()
             exit(-1)
         compiler = compiler + "gcc"
@@ -148,7 +148,7 @@ if __name__ == '__main__':
         print("")
         exit(-1)
 
-    DTC_CPP_FLAGS="-E -Wp,-MD,{0}.pre.tmp -nostdinc -Iarch/{1}/boot/dts -Iarch/{1}/boot/dts/include -undef -D__DTS__  -x assembler-with-cpp"
+    DTC_CPP_FLAGS="-E -Wp,-MD,{0}.pre.tmp -nostdinc -Iarch/{1}/boot/dts -Iinclude -undef -D__DTS__  -x assembler-with-cpp"
     DTC_CPP_FLAGS=DTC_CPP_FLAGS.format(abs_base, Args.arch)
 
     # Run source through the compiler preprocessor to handle include files
@@ -161,7 +161,7 @@ if __name__ == '__main__':
     # Use Linux DTS compiler to produce the full DTS
     DTC_DTC_FLAGS="-f -O dts -o {0}.out.dts -b 0 -i arch/{1}/boot/dts -d {0}.dtc.tmp {2}"
     DTC_DTC_FLAGS=DTC_DTC_FLAGS.format(abs_base, Args.arch, TempFile)
-    cmd="scripts/dtc/dtc "+DTC_DTC_FLAGS
+    cmd="dtc "+DTC_DTC_FLAGS
     if not run_cmd(cmd=cmd, workingDir=kernel_src_loc):
         print("ERROR: Unable to produce full DTS file.")
         exit(-1)
@@ -173,7 +173,7 @@ if __name__ == '__main__':
     # Use Linux DTS compiler to produce the DTB from the full DTS
     DTC_DTC_FLAGS="-f -I dts -O dtb -o {0}.dtb {0}.out.dts"
     DTC_DTC_FLAGS=DTC_DTC_FLAGS.format(abs_base)
-    cmd="scripts/dtc/dtc "+DTC_DTC_FLAGS
+    cmd="dtc "+DTC_DTC_FLAGS
     if not run_cmd(cmd=cmd, workingDir=kernel_src_loc):
         print("ERROR: Unable to produce DTB file.")
         exit(-1)
